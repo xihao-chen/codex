@@ -10,6 +10,7 @@ pub use auth::WorkspaceRoutingSession;
 mod callback_params;
 mod device_code_auth;
 mod gateway_auth;
+pub mod github_copilot;
 mod oauth;
 mod outbound_proxy;
 mod pkce;

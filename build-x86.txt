@@ -1,0 +1,60 @@
+Codex CLI: 在 ARM64 主机编译、打包并部署到 x86_64 Linux
+
+目标平台：x86_64-unknown-linux-gnu（64 位 Linux，使用 glibc）。
+本仓库上次使用 just assemble-codex-package；just 调用打包脚本，
+脚本再调用 cargo build --target ...，不需要安装 cross。
+
+1. 编译与打包（在 ARM64 构建机上）
+
+   确保已安装 just、Rust 目标 x86_64-unknown-linux-gnu 和
+   x86_64-linux-gnu-gcc。进入仓库的 codex-rs 目录：
+
+   cd ~/opensource/codex/codex-rs
+   rustup target add x86_64-unknown-linux-gnu
+   command -v x86_64-linux-gnu-gcc
+
+   以下一条命令先以 release 配置编译 codex、codex-code-mode-host
+   和 bwrap，再将所需资源打包成 tar.gz。归档文件名已存在时，请
+   换一个文件名；默认不会覆盖旧归档。
+
+   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc \
+     CODEX_SKIP_BWRAP_BUILD=1 just assemble-codex-package \
+       --target x86_64-unknown-linux-gnu \
+       --cargo-profile release \
+       --archive-output "$HOME/codex-x86_64-unknown-linux-gnu.tar.gz"
+
+   编译后的 CLI：
+   ~/opensource/codex/codex-rs/target/x86_64-unknown-linux-gnu/release/codex
+
+   打包归档：
+   ~/codex-x86_64-unknown-linux-gnu.tar.gz
+
+   打包脚本也会打印临时包目录的位置；归档内包含 bin/codex、
+   bin/codex-code-mode-host、codex-resources/、codex-path/ 和
+   codex-package.json。请部署完整归档，不要只复制 codex 可执行文件。
+
+2. 传输到 x86_64 Linux 机器（在构建机上）
+
+   将下面的 user@x86-host 替换为目标机器的 SSH 用户和地址：
+
+   scp "$HOME/codex-x86_64-unknown-linux-gnu.tar.gz" user@x86-host:~/
+
+3. 部署/安装（登录到 x86_64 Linux 目标机器后）
+
+   command -v bwrap
+   bwrap --help | grep -- --perms
+   mkdir -p "$HOME/.local/opt/codex-x86_64" "$HOME/.local/bin"
+   tar -xzf "$HOME/codex-x86_64-unknown-linux-gnu.tar.gz" \
+     -C "$HOME/.local/opt/codex-x86_64"
+   ln -s "$HOME/.local/opt/codex-x86_64/bin/codex" "$HOME/.local/bin/codex"
+   export PATH="$HOME/.local/bin:$PATH"
+   codex --version
+
+   如果 ~/.local/bin/codex 已存在，先检查、备份或移走旧安装，再创建
+   符号链接。若要在新终端中直接运行 codex，也需将 ~/.local/bin
+   加入目标机器的 PATH。
+
+注意：CODEX_SKIP_BWRAP_BUILD=1 跳过了内置 bubblewrap 的真实编译，
+包内的 codex-resources/bwrap 是不可用的占位程序。Codex 会优先选用
+目标机 PATH 中满足要求的系统 bwrap；若目标机没有兼容的 bwrap，
+Linux 沙箱将不可用。不要把 ARM64 主机上的 bwrap 复制到 x86_64 机器。

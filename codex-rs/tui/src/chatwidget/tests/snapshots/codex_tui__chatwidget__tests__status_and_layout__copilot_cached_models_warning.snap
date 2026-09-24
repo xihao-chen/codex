@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 22
+expression: lines_to_single_string(&drain_insert_history_transcript(&mut rx).concat())
+---
+⚠ GitHub Copilot model refresh failed: request timed out. Using the last
+  validated model catalog.

@@ -13,6 +13,19 @@ use ratatui::backend::TestBackend;
 use serial_test::serial;
 
 #[tokio::test]
+async fn copilot_cached_models_warning_snapshot() {
+    let (mut chat, mut rx, _) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.on_warning(
+        "GitHub Copilot model refresh failed: request timed out. Using the last validated model catalog.",
+    );
+
+    insta::assert_snapshot!(
+        "copilot_cached_models_warning",
+        lines_to_single_string(&drain_insert_history_transcript(&mut rx).concat())
+    );
+}
+
+#[tokio::test]
 async fn finalized_voice_transcript_renders_beside_the_streamed_cell() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.local_settings.tui.animations = false;

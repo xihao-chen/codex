@@ -6,6 +6,25 @@ use std::num::NonZeroU64;
 use tempfile::tempdir;
 
 #[test]
+fn copilot_is_only_recognized_for_explicitly_configured_provider() {
+    let mut provider = ModelProviderInfo {
+        name: "GitHub Copilot".to_string(),
+        base_url: Some(GITHUB_COPILOT_BASE_URL.to_string()),
+        ..Default::default()
+    };
+
+    assert!(provider.is_github_copilot());
+    assert_eq!(provider.validate(), Ok(()));
+    provider.requires_openai_auth = true;
+    assert!(provider.validate().is_err());
+    assert!(
+        !built_in_model_providers(/*openai_base_url*/ None)
+            .values()
+            .any(ModelProviderInfo::is_github_copilot)
+    );
+}
+
+#[test]
 fn test_api_provider_applies_current_managed_residency() {
     let info = ModelProviderInfo {
         http_headers: Some(maplit::hashmap! {

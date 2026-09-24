@@ -86,6 +86,9 @@ use crate::remote_control_cmd::RemoteControlCommand;
 use doctor::DoctorCommand;
 use state_db_recovery as local_state_db;
 
+use codex_cli::run_copilot_logout;
+use codex_cli::run_copilot_status;
+use codex_cli::run_login_with_copilot;
 use codex_config::LoaderOverrides;
 use codex_core::build_models_manager;
 use codex_core::config::Config;
@@ -499,6 +502,10 @@ struct LoginCommand {
     #[clap(skip)]
     config_overrides: CliConfigOverrides,
 
+    /// Log in to a separate, experimental model provider.
+    #[arg(long, value_enum, conflicts_with_all = ["with_api_key", "with_access_token", "api_key", "use_device_code", "issuer_base_url", "client_id"])]
+    provider: Option<LoginProvider>,
+
     #[arg(
         long = "with-api-key",
         help = "Read the API key from stdin (e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`)"
@@ -543,10 +550,19 @@ enum LoginSubcommand {
     Status,
 }
 
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum LoginProvider {
+    GithubCopilot,
+}
+
 #[derive(Debug, Parser)]
 struct LogoutCommand {
     #[clap(skip)]
     config_overrides: CliConfigOverrides,
+
+    /// Log out of a separate model provider without removing OpenAI credentials.
+    #[arg(long, value_enum)]
+    provider: Option<LoginProvider>,
 }
 
 #[derive(Debug, Parser)]
@@ -1561,11 +1577,16 @@ async fn cli_main(
                 root_config_overrides.clone(),
             );
             match login_cli.action {
-                Some(LoginSubcommand::Status) => {
-                    run_login_status(login_cli.config_overrides).await;
-                }
+                Some(LoginSubcommand::Status) => match login_cli.provider {
+                    Some(LoginProvider::GithubCopilot) => {
+                        run_copilot_status(login_cli.config_overrides).await;
+                    }
+                    None => run_login_status(login_cli.config_overrides).await,
+                },
                 None => {
-                    if login_cli.with_api_key && login_cli.with_access_token {
+                    if matches!(login_cli.provider, Some(LoginProvider::GithubCopilot)) {
+                        run_login_with_copilot(login_cli.config_overrides).await;
+                    } else if login_cli.with_api_key && login_cli.with_access_token {
                         eprintln!(
                             "Choose one login credential source: --with-api-key or --with-access-token."
                         );
@@ -1604,7 +1625,12 @@ async fn cli_main(
                 &mut logout_cli.config_overrides,
                 root_config_overrides.clone(),
             );
-            run_logout(logout_cli.config_overrides).await;
+            match logout_cli.provider {
+                Some(LoginProvider::GithubCopilot) => {
+                    run_copilot_logout(logout_cli.config_overrides).await;
+                }
+                None => run_logout(logout_cli.config_overrides).await,
+            }
         }
         Some(Subcommand::Completion(completion_cli)) => {
             reject_remote_mode_for_subcommand(
@@ -2706,6 +2732,56 @@ mod tests {
     use codex_protocol::ThreadId;
     use codex_tui::TokenUsage;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn copilot_login_and_logout_are_provider_scoped() {
+        let login =
+            MultitoolCli::try_parse_from(["codex", "login", "--provider", "github-copilot"])
+                .unwrap();
+        assert!(matches!(
+            login.subcommand,
+            Some(Subcommand::Login(LoginCommand {
+                provider: Some(LoginProvider::GithubCopilot),
+                ..
+            }))
+        ));
+        let logout =
+            MultitoolCli::try_parse_from(["codex", "logout", "--provider", "github-copilot"])
+                .unwrap();
+        assert!(matches!(
+            logout.subcommand,
+            Some(Subcommand::Logout(LogoutCommand {
+                provider: Some(LoginProvider::GithubCopilot),
+                ..
+            }))
+        ));
+        let status = MultitoolCli::try_parse_from([
+            "codex",
+            "login",
+            "--provider",
+            "github-copilot",
+            "status",
+        ])
+        .unwrap();
+        assert!(matches!(
+            status.subcommand,
+            Some(Subcommand::Login(LoginCommand {
+                provider: Some(LoginProvider::GithubCopilot),
+                action: Some(LoginSubcommand::Status),
+                ..
+            }))
+        ));
+        assert!(
+            MultitoolCli::try_parse_from([
+                "codex",
+                "login",
+                "--provider",
+                "github-copilot",
+                "--with-api-key"
+            ])
+            .is_err()
+        );
+    }
 
     #[test]
     fn interactive_tui_future_stays_bounded() {

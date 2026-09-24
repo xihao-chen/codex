@@ -638,14 +638,26 @@ impl Session {
             codex_models_manager::manager::RefreshStrategy::OnlineIfUncached
         };
         if config.model.is_none()
+            || config.model_provider.is_github_copilot()
             || !matches!(
                 refresh_strategy,
                 codex_models_manager::manager::RefreshStrategy::Offline
             )
         {
-            let _ = models_manager
+            let models = models_manager
                 .list_models(refresh_strategy, config.http_client_factory())
                 .await;
+            if let Some(warning) = models_manager.last_refresh_warning().await
+                && !models.is_empty()
+            {
+                Arc::make_mut(&mut config).startup_warnings.push(warning);
+            }
+            if config.model_provider.is_github_copilot() && models.is_empty() {
+                return Err(CodexErr::Fatal(
+                    "GitHub Copilot has no validated Responses models. Check the model refresh error and your Copilot login."
+                        .to_string(),
+                ));
+            }
         }
         let model = models_manager
             .get_default_model(

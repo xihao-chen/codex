@@ -31,6 +31,7 @@ use crate::auth::auth_manager_for_provider;
 use crate::auth::resolve_provider_auth;
 use crate::auth::resolve_provider_auth_for_scope;
 use crate::combined_auth::compose_auth;
+use crate::github_copilot::GithubCopilotProvider;
 use crate::models_endpoint::OpenAiModelsEndpoint;
 use crate::workspace_routing::WorkspaceRoutingContext;
 
@@ -359,6 +360,9 @@ pub fn create_model_provider(
     provider_info: ModelProviderInfo,
     auth_manager: Option<Arc<AuthManager>>,
 ) -> SharedModelProvider {
+    if provider_info.is_github_copilot() {
+        return Arc::new(GithubCopilotProvider::new(provider_info, auth_manager));
+    }
     if provider_info.is_amazon_bedrock() {
         return Arc::new(AmazonBedrockModelProvider::new(provider_info, auth_manager));
     }

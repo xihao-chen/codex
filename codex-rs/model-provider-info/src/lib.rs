@@ -75,6 +75,8 @@ const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 const OPENAI_ACTOR_AUTHORIZATION_HEADER: &str = "x-openai-actor-authorization";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
 pub const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
+pub const GITHUB_COPILOT_PROVIDER_ID: &str = "github-copilot";
+pub const GITHUB_COPILOT_BASE_URL: &str = "https://api.githubcopilot.com";
 const AMAZON_BEDROCK_PROVIDER_NAME: &str = "Amazon Bedrock";
 pub const AMAZON_BEDROCK_PROVIDER_ID: &str = "amazon-bedrock";
 const AMAZON_BEDROCK_RUNTIME_PROVIDER_NAME: &str = "Amazon Bedrock Runtime";
@@ -285,6 +287,28 @@ other non-default provider fields are not supported"
     }
 
     pub fn validate(&self) -> std::result::Result<(), String> {
+        if self.name == "GitHub Copilot" {
+            if !self.is_github_copilot() {
+                return Err(
+                    "GitHub Copilot requires base_url = \"https://api.githubcopilot.com\""
+                        .to_string(),
+                );
+            }
+            if self.env_key.is_some()
+                || self.experimental_bearer_token.is_some()
+                || self.auth.is_some()
+                || self.gateway_oauth.is_some()
+                || self.aws.is_some()
+                || self.requires_openai_auth
+                || self.supports_websockets
+                || self.model_catalog_url.is_some()
+            {
+                return Err(
+                    "GitHub Copilot uses its own login; remove other auth, catalog, and WebSocket settings"
+                        .to_string(),
+                );
+            }
+        }
         if let Some(gateway) = &self.gateway_oauth {
             gateway.validate(self)?;
         }
@@ -600,6 +624,10 @@ other non-default provider fields are not supported"
 
     pub fn is_openai(&self) -> bool {
         self.name == OPENAI_PROVIDER_NAME
+    }
+
+    pub fn is_github_copilot(&self) -> bool {
+        self.base_url.as_deref() == Some(GITHUB_COPILOT_BASE_URL) && self.name == "GitHub Copilot"
     }
 
     pub fn supports_codex_backend_routes(&self) -> bool {

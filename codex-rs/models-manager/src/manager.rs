@@ -111,6 +111,11 @@ type SharedModelsEndpointClient = Arc<dyn ModelsEndpointClient>;
 
 /// Coordinates model discovery plus cached metadata on disk.
 pub trait ModelsManager: fmt::Debug + Send + Sync {
+    /// User-visible warning from the latest remote catalog refresh, if a validated cache was reused.
+    fn last_refresh_warning(&self) -> ModelsManagerFuture<'_, Option<String>> {
+        Box::pin(std::future::ready(None))
+    }
+
     /// Supply startup API-key discovery policy; live changes require a new session.
     /// Static catalogs ignore this setting.
     fn set_api_key_model_discovery_enabled(&self, _enabled: bool) {}

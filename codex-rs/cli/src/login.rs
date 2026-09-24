@@ -16,6 +16,7 @@ use codex_login::AuthManager;
 use codex_login::AuthRouteConfig;
 use codex_login::CLIENT_ID;
 use codex_login::ServerOptions;
+use codex_login::github_copilot;
 use codex_login::is_workload_identity_selected;
 use codex_login::login_with_access_token;
 use codex_login::login_with_api_key;
@@ -44,6 +45,79 @@ const API_KEY_LOGIN_DISABLED_MESSAGE: &str =
 const ACCESS_TOKEN_LOGIN_DISABLED_MESSAGE: &str =
     "Access token login is disabled. Use API key login instead.";
 const LOGIN_SUCCESS_MESSAGE: &str = "Successfully logged in";
+const DEFAULT_GITHUB_COPILOT_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
+
+fn github_copilot_client_id(
+    value: Result<String, std::env::VarError>,
+) -> Result<String, std::env::VarError> {
+    match value {
+        Ok(client_id) => Ok(client_id),
+        Err(std::env::VarError::NotPresent) => Ok(DEFAULT_GITHUB_COPILOT_CLIENT_ID.to_string()),
+        Err(error) => Err(error),
+    }
+}
+
+pub async fn run_login_with_copilot(cli_config_overrides: CliConfigOverrides) -> ! {
+    let config = load_config_or_exit(cli_config_overrides).await;
+    let _login_log_guard = init_login_file_logging(&config);
+    let client_id = match github_copilot_client_id(std::env::var("GITHUB_COPILOT_CLIENT_ID")) {
+        Ok(client_id) => client_id,
+        Err(error) => {
+            eprintln!("Unable to read GITHUB_COPILOT_CLIENT_ID: {error}");
+            std::process::exit(1);
+        }
+    };
+    match github_copilot::login(&config.codex_home, &client_id, |url, code| {
+        eprintln!("Open {url} and enter code: {code}");
+    })
+    .await
+    {
+        Ok(()) => {
+            eprintln!("Successfully logged in to GitHub Copilot.");
+            std::process::exit(0);
+        }
+        Err(err) => {
+            eprintln!("GitHub Copilot login failed: {err}");
+            std::process::exit(1);
+        }
+    }
+}
+
+pub async fn run_copilot_status(cli_config_overrides: CliConfigOverrides) -> ! {
+    let config = load_config_or_exit(cli_config_overrides).await;
+    match github_copilot::load(&config.codex_home) {
+        Ok(Some(_)) => {
+            eprintln!("Logged in to GitHub Copilot.");
+            std::process::exit(0);
+        }
+        Ok(None) => {
+            eprintln!("Not logged in to GitHub Copilot.");
+            std::process::exit(1);
+        }
+        Err(err) => {
+            eprintln!("Unable to read GitHub Copilot login: {err}");
+            std::process::exit(1);
+        }
+    }
+}
+
+pub async fn run_copilot_logout(cli_config_overrides: CliConfigOverrides) -> ! {
+    let config = load_config_or_exit(cli_config_overrides).await;
+    match github_copilot::logout(&config.codex_home) {
+        Ok(true) => {
+            eprintln!("Logged out of GitHub Copilot.");
+            std::process::exit(0);
+        }
+        Ok(false) => {
+            eprintln!("Not logged in to GitHub Copilot.");
+            std::process::exit(0);
+        }
+        Err(err) => {
+            eprintln!("Unable to remove GitHub Copilot login: {err}");
+            std::process::exit(1);
+        }
+    }
+}
 
 /// Installs a small file-backed tracing layer for direct `codex login` flows.
 ///
@@ -595,7 +669,21 @@ mod tests {
     use tempfile::tempdir;
 
     use super::clear_existing_auth_before_login;
+    use super::github_copilot_client_id;
     use super::safe_format_key;
+
+    #[test]
+    fn copilot_client_id_defaults_only_when_unset() {
+        assert_eq!(
+            github_copilot_client_id(Err(std::env::VarError::NotPresent)).unwrap(),
+            "Iv1.b507a08c87ecfe98"
+        );
+        assert_eq!(
+            github_copilot_client_id(Ok("Ov23li-custom".to_string())).unwrap(),
+            "Ov23li-custom"
+        );
+        assert_eq!(github_copilot_client_id(Ok(String::new())).unwrap(), "");
+    }
 
     #[tokio::test]
     async fn clears_existing_auth_before_login() {
